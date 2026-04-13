@@ -1,9 +1,11 @@
-import pandas as pd
-import faiss
-import numpy as np
+import settings  # noqa: I001 — set OMP/thread env before numpy/torch
+
 import pickle
 from pathlib import Path
-from sentence_transformers import SentenceTransformer
+
+import faiss
+import numpy as np
+import pandas as pd
 from tqdm import tqdm
 
 PROCESSED_DIR   = Path("data/processed")
@@ -21,7 +23,7 @@ df = df.merge(entity_df[["report_id","conditions","anatomy","procedures"]],
               on="report_id", how="left")
 print(f"Loaded {len(df)} reports with entity data merged")
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
+model = settings.load_sentence_transformer()
 
 chunks   = []
 metadata = []
@@ -58,9 +60,12 @@ for idx, row in tqdm(df.iterrows(), total=len(df), desc="Building chunks"):
 print(f"Created {len(chunks)} enriched chunks")
 
 print("Generating embeddings...")
-embeddings = model.encode(chunks, batch_size=32,
-                          show_progress_bar=True,
-                          convert_to_numpy=True)
+embeddings = model.encode(
+    chunks,
+    batch_size=settings.ENCODE_BATCH,
+    show_progress_bar=True,
+    convert_to_numpy=True,
+)
 
 print("Building FAISS index...")
 dimension = embeddings.shape[1]

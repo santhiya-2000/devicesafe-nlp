@@ -1,10 +1,12 @@
-import faiss
+import settings  # noqa: I001 — set OMP/thread env before numpy/torch
+
 import pickle
-import numpy as np
-from sentence_transformers import SentenceTransformer
 from pathlib import Path
+
+import faiss
 import requests
-import json
+
+from retrieve_utils import retrieve_rag
 
 VECTORSTORE_DIR = Path("data/vectorstore")
 
@@ -16,42 +18,28 @@ with open(VECTORSTORE_DIR / "chunks.pkl", "rb") as f:
     chunks = pickle.load(f)
 
 print("Loading embedding model...")
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
+embedder = settings.load_sentence_transformer()
 
 print("Vectorstore ready.\n")
 
-def retrieve(query, k=4):
-    query_vec = embedder.encode([query], convert_to_numpy=True)
-    distances, indices = index.search(query_vec.astype(np.float32), k=k)
-    results = []
-    for dist, idx in zip(distances[0], indices[0]):
-        results.append({
-            "text":        chunks[idx],
-            "device":      metadata[idx]["device_name"],
-            "event_type":  metadata[idx]["event_type"],
-            "report_id":   metadata[idx]["report_id"],
-            "distance":    round(float(dist), 3)
-        })
-    return results
-
-def ask_ollama(prompt, model="mistral"):
-    url = "http://localhost:11434/api/generate"
-    payload = {
-        "model": model,
-        "prompt": prompt,
-        "stream": False
-    }
+def ask_ollama(prompt):
     try:
-        r = requests.post(url, json=payload, timeout=180)
+        r = requests.post(
+            settings.OLLAMA_URL,
+            json=settings.ollama_generate_json(prompt),
+            timeout=300,
+        )
         return r.json().get("response", "No response from Ollama")
     except Exception as e:
-        return f"Ollama error: {e}. Make sure Ollama is running with: ollama serve"
+        return f"Ollama error: {e}. Use a smaller model: DEVICESAFE_OLLAMA_MODEL=phi3:mini"
 
 def chat(question):
     print(f"\nQuestion: {question}")
     print("Retrieving relevant reports...")
 
-    results = retrieve(question, k=4)
+    results, note = retrieve_rag(question, index, metadata, chunks, embedder, k=4)
+    if note:
+        print(f"Note: {note}\n")
 
     context = ""
     for i, r in enumerate(results):

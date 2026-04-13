@@ -1,10 +1,15 @@
-import requests
-import pandas as pd
-from pathlib import Path
+import settings  # noqa: I001 — set OMP/thread env before numpy
+
 import time
+from pathlib import Path
+
+import pandas as pd
+import requests
 
 RAW_DIR = Path("data/raw")
 RAW_DIR.mkdir(parents=True, exist_ok=True)
+
+MAX_PER_TERM = settings.MAX_PER_TERM
 
 BASE_URL = "https://api.fda.gov/device/event.json"
 
@@ -78,7 +83,7 @@ all_records = []
 
 for term in SEARCH_TERMS:
     print(f"Fetching: {term}...")
-    raw = fetch_reports(term, total=200)
+    raw = fetch_reports(term, total=MAX_PER_TERM)
     print(f"  Got {len(raw)} raw reports")
 
     # debug: print what text fields look like in first record

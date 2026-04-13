@@ -1,10 +1,13 @@
-import streamlit as st
-import faiss
+import settings  # noqa: I001 — set OMP/thread env before numpy/torch
+
 import pickle
-import numpy as np
-from sentence_transformers import SentenceTransformer
 from pathlib import Path
+
+import faiss
 import requests
+import streamlit as st
+
+from retrieve_utils import retrieve_rag
 
 VECTORSTORE_DIR = Path("data/vectorstore")
 
@@ -21,33 +24,26 @@ def load_vectorstore():
         metadata = pickle.load(f)
     with open(VECTORSTORE_DIR / "chunks.pkl", "rb") as f:
         chunks = pickle.load(f)
-    embedder = SentenceTransformer("all-MiniLM-L6-v2")
+    embedder = settings.load_sentence_transformer()
+    dim = embedder.get_sentence_embedding_dimension()
+    if index.ntotal > 0 and getattr(index, "d", dim) != dim:
+        raise RuntimeError(
+            f"FAISS index dimension ({getattr(index, 'd', '?')}) does not match "
+            f"embedding model dimension ({dim}). Rebuild data/vectorstore with "
+            f"build_vectorstore.py, or set DEVICESAFE_EMBED_MODEL to the model used for the index."
+        )
     return index, metadata, chunks, embedder
 
-def retrieve(query, index, metadata, chunks, embedder, k=4):
-    query_vec = embedder.encode([query], convert_to_numpy=True)
-    distances, indices = index.search(query_vec.astype(np.float32), k=k)
-    results = []
-    for dist, idx in zip(distances[0], indices[0]):
-        results.append({
-            "text":       chunks[idx],
-            "device":     metadata[idx]["device_name"],
-            "event_type": metadata[idx]["event_type"],
-            "report_id":  metadata[idx]["report_id"],
-            "distance":   round(float(dist), 3)
-        })
-    return results
-
-def ask_ollama(prompt, model="mistral"):
+def ask_ollama(prompt):
     try:
         r = requests.post(
-            "http://localhost:11434/api/generate",
-            json={"model": model, "prompt": prompt, "stream": False},
-            timeout=180
+            settings.OLLAMA_URL,
+            json=settings.ollama_generate_json(prompt),
+            timeout=300,
         )
         return r.json().get("response", "No response from Ollama.")
     except Exception as e:
-        return f"Ollama error: {e}. Make sure Ollama is running."
+        return f"Ollama error: {e}. Make sure Ollama is running. For slow CPUs, pull a smaller model (e.g. phi3:mini) and set DEVICESAFE_OLLAMA_MODEL."
 
 # ── sidebar ────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -67,7 +63,8 @@ with st.sidebar:
     st.caption("☁️ AWS Comprehend Medical NER")
     st.caption("🧠 BERT variant analysis")
     st.caption("🗄️ FAISS vector store")
-    st.caption("🤖 Ollama (Mistral) LLM")
+    st.caption(f"🤖 Ollama — {settings.OLLAMA_MODEL}")
+    st.caption("Slow CPU? `export DEVICESAFE_OLLAMA_MODEL=phi3:mini` and `ollama pull phi3:mini`")
     st.divider()
     num_sources = st.slider("Sources to retrieve", 2, 8, 4)
     st.divider()
@@ -109,7 +106,11 @@ if st.button("Search", type="primary") and question:
     index, metadata, chunks, embedder = load_vectorstore()
 
     with st.spinner("Retrieving relevant FDA reports..."):
-        results = retrieve(question, index, metadata, chunks, embedder, k=num_sources)
+        results, retrieval_note = retrieve_rag(
+            question, index, metadata, chunks, embedder, k=num_sources
+        )
+    if retrieval_note:
+        st.warning(retrieval_note)
 
     context = ""
     for i, r in enumerate(results):

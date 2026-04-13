@@ -1,9 +1,11 @@
-import pandas as pd
-import faiss
-import numpy as np
+import settings  # noqa: I001 — set OMP/thread env before numpy/torch
+
 import pickle
 from pathlib import Path
-from sentence_transformers import SentenceTransformer
+
+import faiss
+import numpy as np
+import pandas as pd
 from tqdm import tqdm
 
 PROCESSED_DIR = Path("data/processed")
@@ -17,7 +19,8 @@ df = df[df["clean_text"].str.len() > 50].reset_index(drop=True)
 print(f"Loaded {len(df)} reports")
 
 print("\nLoading sentence transformer model...")
-model = SentenceTransformer("all-MiniLM-L6-v2")
+print(f"  (model={settings.EMBED_MODEL}, encode batch={settings.ENCODE_BATCH}, torch threads={settings.TORCH_THREADS})")
+model = settings.load_sentence_transformer()
 print("Model loaded OK")
 
 print("\nBuilding text chunks for embedding...")
@@ -47,9 +50,9 @@ print(f"Created {len(chunks)} text chunks from {len(df)} reports")
 print("\nGenerating embeddings (this takes ~2 mins)...")
 embeddings = model.encode(
     chunks,
-    batch_size=32,
+    batch_size=settings.ENCODE_BATCH,
     show_progress_bar=True,
-    convert_to_numpy=True
+    convert_to_numpy=True,
 )
 print(f"Embeddings shape: {embeddings.shape}")
 
