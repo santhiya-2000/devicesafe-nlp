@@ -73,7 +73,7 @@ with st.sidebar:
     st.caption("Santhiya Venkatesh")
 
 # ── main area ──────────────────────────────────────────────────────────────
-st.title("🔬 DeviceSafe NLP")
+st.title("DeviceSafe NLP")
 st.subheader("Medical Device Failure Signal Extraction")
 st.caption(
     "Ask questions about medical device failures. "
